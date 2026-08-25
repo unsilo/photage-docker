@@ -1,0 +1,159 @@
+# Photage — the whole server, in one file.
+#
+#   1. put this file, nginx.conf and .env.example in the same directory
+#   2. cp .env.example .env   and fill in the four required values
+#   3. docker compose up -d
+#
+# Runs on a Raspberry Pi 5, an older Pi, a NAS, or a laptop. Nothing here needs
+# an AI accelerator; the classifiers exist in the UI and ship disabled. For a
+# Hailo-8 or Hailo-10H, layer docker-compose.hailo.yml on top — see docs/hailo.md.
+
+name: photage
+
+services:
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-photage}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env — see .env.example}
+      POSTGRES_DB: ${POSTGRES_DB:-photage_prod}
+    volumes:
+      - ${PHOTAGE_DB_PATH:-photage-db}:/var/lib/postgresql
+    # The 64MB default gets tight once the gallery starts running the sorts and
+    # hash joins behind tag and album queries.
+    shm_size: 256mb
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-photage} -d ${POSTGRES_DB:-photage_prod}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    logging: &logging
+      # An unbounded json-file log will eventually eat the SD card.
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  photage:
+    image: tehsnappysoftware/photage:${PHOTAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${PHOTAGE_DIRECT_BIND:-127.0.0.1:4000}:4000"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-photage}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-photage_prod}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:?generate one with `openssl rand -base64 48`}
+      PHX_HOST: ${PHX_HOST:?set PHX_HOST to the name you reach this server at}
+
+      PHOTAGE_IMAGE_URL_BASE: ${PHOTAGE_IMAGE_URL_BASE:-http://${PHX_HOST}}
+      PHOTAGE_CHECK_ORIGIN: ${PHOTAGE_CHECK_ORIGIN:-}
+
+      # Created on first boot, and only while the users table is empty.
+      # /users/register finishes over a magic-link email and this container has
+      # no mailer configured, so without these there is no way to log in.
+      PHOTAGE_ADMIN_EMAIL: ${PHOTAGE_ADMIN_EMAIL:-}
+      PHOTAGE_ADMIN_PASSWORD: ${PHOTAGE_ADMIN_PASSWORD:-}
+
+      # Self-service signup, off by default. Photage has no per-user ownership of
+      # photos, albums or tags — a second account is a second key to the same
+      # library, not a second library. See docs/configuration.md.
+      PHOTAGE_ALLOW_REGISTRATION: ${PHOTAGE_ALLOW_REGISTRATION:-false}
+
+      # The directory the import screen starts in. Bind-mounted below.
+      PHOTAGE_PHOTO_SOURCE: /import
+
+      # Both python workers run under this interpreter. Set explicitly because
+      # Port.open/2 does no PATH lookup of its own.
+      PHOTAGE_PYTHON: /usr/bin/python3
+
+      # Reverse geocoding turns a photo's GPS coordinates into country, state
+      # and place tags. There are TWO sources, both optional and neither
+      # implying the other. With neither, photos still import and still keep
+      # their GPS EXIF — they get no place tags and wait in Unlocated.
+      # See docs/geonames.md.
+
+      # SOURCE 1: a local copy of the GeoNames gazetteer. No account, no quota,
+      # and no coordinates leaving the machine. Costs a ~15 MB download and
+      # ~185k rows the first time it is switched on.
+      #
+      # Off by default on purpose: creating a container is not consent to fetch
+      # 15 MB. Set it true and the next boot builds it — which is the one boot
+      # that can take minutes, and what the healthcheck's 300s start period is
+      # there to cover.
+      #
+      # Safe to leave true forever. Photage.Geo.Import.ensure_loaded/1 checks the
+      # table before downloading, so every boot after the first is one query.
+      # To build it without restarting:
+      #
+      #   docker compose exec photage /app/bin/photage eval 'Photage.Release.load_gazetteer()'
+      #
+      # Loading it does NOT place photos already imported: geocoding runs on
+      # import. Push the backlog from the Repairs panel's Unlocated entry.
+      PHOTAGE_LOAD_GAZETTEER: ${PHOTAGE_LOAD_GAZETTEER:-false}
+
+      # SOURCE 2: the geonames.org web service. Off unless you supply an
+      # account, because the account has to be yours — this is an online lookup
+      # and the quota is per username.
+      #
+      # Free: register at https://www.geonames.org/login, then enable the
+      # username for the free web services on your account page — a fresh
+      # account is NOT enabled until you tick that box, and until you do every
+      # lookup is rejected.
+      #
+      # Set alongside the gazetteer it becomes a fallback for coordinates the
+      # local data cannot place, rather than the primary source.
+      PHOTAGE_GEONAMES_USERNAME: ${PHOTAGE_GEONAMES_USERNAME:-}
+      PHOTAGE_GEONAMES_LANGUAGE: ${PHOTAGE_GEONAMES_LANGUAGE:-en}
+      # Only for the commercial endpoint (https://secure.geonames.net). Leave
+      # blank for the free service.
+      PHOTAGE_GEONAMES_BASE_URL: ${PHOTAGE_GEONAMES_BASE_URL:-}
+
+      # Escape hatch for a bad migration: start the app without running
+      # Photage.Release.setup() so you can get a shell.
+      PHOTAGE_SKIP_MIGRATIONS: ${PHOTAGE_SKIP_MIGRATIONS:-false}
+
+      # A Pi 5 has 4 cores, and Postgres is competing for the same ones. 10 (the
+      # app default) mostly buys context switching.
+      POOL_SIZE: ${POOL_SIZE:-6}
+    volumes:
+      # Originals and thumbnails. MUST land on /app_warehouse: the image sets
+      # PHOTAGE_WAREHOUSE to that path, and it is both where the ingestion
+      # pipeline writes and where /media is served from.
+      #
+      # Default is a named volume, which lives under /var/lib/docker — the SD
+      # card on a Pi. For external storage set PHOTAGE_WAREHOUSE_PATH=/mnt/photos
+      # in .env; Compose treats a value containing a slash as a bind mount. The
+      # directory must be writable by uid 1000.
+      - ${PHOTAGE_WAREHOUSE_PATH:-photage-warehouse}:/app_warehouse
+
+      # Upload staging, the Bumblebee/HuggingFace model cache, and (with an
+      # accelerator) HEF files under models/. Rebuildable, but keep it on a
+      # volume so an image upgrade does not re-download models.
+      - photage-cache:/app_cache
+
+      # Drop photos in here to import them. Created by install.sh; if you are
+      # writing .env by hand, `mkdir import` first — Docker will otherwise
+      # create it owned by root and the import screen will show it empty.
+      - ${PHOTAGE_IMPORT_PATH:-./import}:/import
+    logging: *logging
+
+  proxy:
+    image: nginx:1-alpine
+    restart: unless-stopped
+    depends_on:
+      - photage
+    ports:
+      - "${PHOTAGE_HTTP_PORT:-80}:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    logging: *logging
+
+volumes:
+  photage-db:
+  photage-warehouse:
+  photage-cache:

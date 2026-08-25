@@ -1,0 +1,147 @@
+# Hailo overlay — EXPERIMENTAL in 0.1.0. Read docs/hailo.md before using it.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.hailo.yml up -d
+#
+# The published image ships no `hailo_platform`: HailoRT's python bindings are
+# not on PyPI, they arrive on the host from Hailo's apt packages, and the exact
+# version has to match the host's kernel driver. Baking one version into the
+# image would be wrong for everyone else.
+#
+# So this overlay borrows the host's copy. Four things get mounted or set:
+#
+#   /dev/hailo0                the accelerator itself
+#   hailo_platform             the host's python bindings, onto PYTHONPATH
+#   libhailort.so.<ver>        the library those bindings link against
+#   *.hef                      the compiled models, which are in no image
+#
+# Because the bindings come from the host, driver/library/binding versions
+# cannot drift apart — the failure mode this whole stack is famous for. What it
+# trades for that is a Python ABI requirement: the bindings are compiled for one
+# CPython minor version, and they have to match the interpreter INSIDE the
+# container. Run scripts/env-detect.sh; it checks this and prints the exact
+# .env lines to paste.
+#
+# Nothing is enabled by default. Turn a classifier on at /classifier once its
+# HEF is in place, and read its `load_error` if it does not come up — the
+# workers report failures there rather than crashing.
+
+services:
+  photage:
+    devices:
+      # NOT always /dev/hailo0. Each driver generation names the char device
+      # differently, and this is bind-mounted by path, so a wrong name is
+      #
+      #   Error response from daemon: error gathering device information while
+      #   adding custom device "/dev/hailo0": no such file or directory
+      #
+      #   hailo_pci    HailoRT 4.x    Hailo-8, `hailo-all`          /dev/hailo0
+      #   hailo1x_pci  HailoRT 5.1.1  RPi archive `hailo-h10-all`   /dev/hailo0
+      #   hailo1x      HailoRT 5.3.0  Hailo's own debs              /dev/h1x-0
+      #
+      # Confirmed on a Pi 5 + Hailo-10H: upgrading 5.1.1 -> 5.3.0 moves the node
+      # and the old path stops existing. scripts/env-detect.sh finds whichever
+      # one is there and writes HAILO_DEVICE; the default covers 4.x and 5.1.1.
+      #
+      # The kernel driver behind the node lives on the host and is not something
+      # any container can install. If no node exists at all, no compose flag
+      # will help — see docs/hailo.md.
+      - ${HAILO_DEVICE:-/dev/hailo0}:${HAILO_DEVICE:-/dev/hailo0}
+
+    # `devices:` copies the host node's owner, group and mode into the
+    # container. The container runs as uid 1000 with no supplementary groups, so
+    # a `crw-rw---- root:hailo` node is EACCES on every open() — which looks
+    # exactly like a driver mismatch and will send you chasing HailoRT versions
+    # for an hour. Numeric gid, because the group name would have to exist
+    # inside the container to resolve.
+    #
+    #   stat -c '%G %g' "$HAILO_DEVICE"
+    group_add:
+      - "${HAILO_GID:?run scripts/env-detect.sh — it prints HAILO_GID for this host}"
+
+    environment:
+      # Where the mounts below land.
+      PYTHONPATH: /opt/hailo/python
+      LD_LIBRARY_PATH: /opt/hailo/lib
+
+      # Not an arbitrary label. HailoRT hands the device exclusively to the
+      # first process that opens it unless every opener names the same group,
+      # and its GenAI stack accepts this literal id and no other — which is what
+      # lets detection and captioning run at the same time. hailo_server.py and
+      # vlm_server.py must agree, so it is set once here.
+      HAILO_GROUP_ID: SHARED
+
+      # Escape hatch, runtime rather than a rebuild. The worker picks its
+      # inference API from the HailoRT major version — 4.x uses vstreams
+      # (Hailo-8), 5.x uses InferModel (Hailo-10H) — and falls back
+      # behaviourally if the device answers NOT_IMPLEMENTED. Leave this unset
+      # unless that goes wrong; a wrong value forces an API the chip does not
+      # implement onto every photo.
+      #
+      #   PHOTAGE_HAILO_API=vstreams      # force the Hailo-8 path
+      #   PHOTAGE_HAILO_API=infer_model   # force the Hailo-10H path
+      PHOTAGE_HAILO_API: ${PHOTAGE_HAILO_API:-}
+
+      # Captioning (qwen2) mitigations. Both default to off, so they can be
+      # turned on one at a time and attributed.
+      #
+      # A VLM instance degrades as it runs: a fresh one generates in ~9s and
+      # measurably slows within a dozen generations, and on 2026-08-09 a worker
+      # failed outright at generation 394 with "Failed to read generator" and
+      # then failed identically on every photo until it was restarted. The
+      # worker now reloads the model after a failed generation by itself, so
+      # one poisoned instance costs one photo; these two are for the underlying
+      # accumulation.
+      #
+      #   PHOTAGE_VLM_OPTIMIZE_MEMORY=1   ask HailoRT to economise on-die memory.
+      #     The model is most of the card — ~3656MB of 7221 resident at idle,
+      #     ~6815MB while generating. About 400MB of headroom.
+      #   PHOTAGE_VLM_RECYCLE_EVERY=50    reload the model every N generations.
+      #     Removes the cliff and the slowdown at the cost of a reload. Blunt,
+      #     and it masks whatever is accumulating — use it to make captioning
+      #     usable, not to consider the problem solved.
+      PHOTAGE_VLM_OPTIMIZE_MEMORY: ${PHOTAGE_VLM_OPTIMIZE_MEMORY:-}
+      PHOTAGE_VLM_RECYCLE_EVERY: ${PHOTAGE_VLM_RECYCLE_EVERY:-}
+
+    volumes:
+      # The host's python bindings, mounted as a single package rather than by
+      # putting the host's whole dist-packages on the path — which would shadow
+      # the container's numpy and opencv with the host's and give you an ABI
+      # mismatch in place of a version mismatch.
+      - ${HAILO_PYTHON_PACKAGE:?run scripts/env-detect.sh — it prints HAILO_PYTHON_PACKAGE}:/opt/hailo/python/hailo_platform:ro
+
+      # libhailort itself. Mounted under its exact soname because that is the
+      # name the bindings' compiled extension asks the loader for; a plain
+      # `libhailort.so` will not satisfy a NEEDED of `libhailort.so.4.20.0`.
+      - ${HAILORT_LIB:?run scripts/env-detect.sh — it prints HAILORT_LIB}:/opt/hailo/lib/${HAILORT_SONAME:?run scripts/env-detect.sh — it prints HAILORT_SONAME}:ro
+
+      # Compiled models. Deliberately not in the image: they are large, and
+      # Hailo's Dataflow Compiler and model-zoo terms are a licensing question
+      # of their own. Mounted from the host rather than copied onto the cache
+      # volume so they survive `docker compose down -v` and are easy to swap
+      # when HailoRT moves.
+      #
+      # Get builds for the RIGHT DEVICE and a matching HailoRT version —
+      # hailo8/ and hailo10h/ are different compilations of the same network and
+      # are not interchangeable:
+      #
+      #   https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v<ver>/<arch>/<model>.hef
+      #
+      # Filenames must match what the classifier rows ask for: yolov8m.hef,
+      # yolov11m.hef, resnet_v1_50.hef.
+      # NOT read-only, and that is deliberate rather than sloppy.
+      #
+      # This path is shared. The app derives the bumblebee/HuggingFace cache
+      # from PHOTAGE_CACHE as `$PHOTAGE_CACHE/models`, which is the same
+      # directory the HEFs are read from — so a bumblebee classifier downloads
+      # into `models/huggingface/` here. Mounted `:ro`, enabling one fails to
+      # write its cache, and the error points at HuggingFace rather than at a
+      # mount.
+      #
+      # Consequence worth knowing: your HEF directory will grow a
+      # `huggingface/` subdirectory of downloaded model weights. Untidy, and
+      # persistent, which is the right trade — they survive `down -v` along
+      # with the HEFs instead of being re-downloaded.
+      #
+      # The directory must be writable by uid 1000, the same rule as the
+      # warehouse.
+      - ${PHOTAGE_MODELS_PATH:?set PHOTAGE_MODELS_PATH to a host directory holding your .hef files}:/app_cache/models
