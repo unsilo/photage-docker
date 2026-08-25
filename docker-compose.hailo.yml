@@ -1,0 +1,67 @@
+# Hailo overlay — EXPERIMENTAL. Read docs/hailo.md before using it.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.hailo.yml up -d
+#
+
+services:
+  photage:
+    devices:
+      # NOT always /dev/hailo0. Each driver generation names the char device
+      # differently, and this is bind-mounted by path, so a wrong name is
+      #
+      #   Error response from daemon: error gathering device information while
+      #   adding custom device "/dev/hailo0": no such file or directory
+      #
+      #   hailo_pci    HailoRT 4.x    Hailo-8, `hailo-all`          /dev/hailo0
+      #   hailo1x_pci  HailoRT 5.1.1  RPi archive `hailo-h10-all`   /dev/hailo0
+      #   hailo1x      HailoRT 5.3.0  Hailo's own debs              /dev/h1x-0
+      #
+      # Confirmed on a Pi 5 + Hailo-10H: upgrading 5.1.1 -> 5.3.0 moves the node
+      # and the old path stops existing. scripts/env-detect.sh finds whichever
+      # one is there and writes HAILO_DEVICE; the default covers 4.x and 5.1.1.
+      #
+      # The kernel driver behind the node lives on the host and is not something
+      # any container can install. If no node exists at all, no compose flag
+      # will help — see docs/hailo.md.
+      - ${HAILO_DEVICE:-/dev/hailo0}:${HAILO_DEVICE:-/dev/hailo0}
+
+    # `devices:` copies the host node's owner, group and mode into the
+    # container. The container runs as uid 1000 with no supplementary groups, so
+    # a `crw-rw---- root:hailo` node is EACCES on every open() — which looks
+    # exactly like a driver mismatch and will send you chasing HailoRT versions
+    # for an hour. Numeric gid, because the group name would have to exist
+    # inside the container to resolve.
+    #
+    #   stat -c '%G %g' "$HAILO_DEVICE"
+    group_add:
+      - "${HAILO_GID:?run scripts/env-detect.sh — it prints HAILO_GID for this host}"
+
+    environment:
+      # Where the mounts below land.
+      PYTHONPATH: /opt/hailo/python
+      LD_LIBRARY_PATH: /opt/hailo/lib
+      HAILO_GROUP_ID: SHARED
+
+      # Escape hatch, runtime rather than a rebuild. The worker picks its
+      # inference API from the HailoRT major version — 4.x uses vstreams
+      # (Hailo-8), 5.x uses InferModel (Hailo-10H) — and falls back
+      # behaviourally if the device answers NOT_IMPLEMENTED. Leave this unset
+      # unless that goes wrong; a wrong value forces an API the chip does not
+      # implement onto every photo.
+      #
+      #   PHOTAGE_HAILO_API=vstreams      # force the Hailo-8 path
+      #   PHOTAGE_HAILO_API=infer_model   # force the Hailo-10H path
+      PHOTAGE_HAILO_API: ${PHOTAGE_HAILO_API:-}
+
+      # Captioning (qwen2) mitigations. Both default to off, so they can be
+      # turned on one at a time and attributed.
+      #
+      #   PHOTAGE_VLM_OPTIMIZE_MEMORY=1   ask HailoRT to economise on-die memory.
+      #   PHOTAGE_VLM_RECYCLE_EVERY=50    reload the model every N generations.
+      PHOTAGE_VLM_OPTIMIZE_MEMORY: ${PHOTAGE_VLM_OPTIMIZE_MEMORY:-}
+      PHOTAGE_VLM_RECYCLE_EVERY: ${PHOTAGE_VLM_RECYCLE_EVERY:-}
+
+    volumes:
+      - ${HAILO_PYTHON_PACKAGE:?run scripts/env-detect.sh — it prints HAILO_PYTHON_PACKAGE}:/opt/hailo/python/hailo_platform:ro
+      - ${HAILORT_LIB:?run scripts/env-detect.sh — it prints HAILORT_LIB}:/opt/hailo/lib/${HAILORT_SONAME:?run scripts/env-detect.sh — it prints HAILORT_SONAME}:ro
+      - ${PHOTAGE_MODELS_PATH:?set PHOTAGE_MODELS_PATH to a host directory holding your .hef files}:/app_cache/models
