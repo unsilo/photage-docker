@@ -29,7 +29,7 @@ set -euo pipefail
 
 PHOTAGE_DIR="${PHOTAGE_DIR:-$HOME/photage}"
 PHOTAGE_REF="${PHOTAGE_REF:-main}"
-PHOTAGE_TAG="${PHOTAGE_TAG:-0.1.4}"
+PHOTAGE_TAG="${PHOTAGE_TAG:-0.5.0}"
 RAW="https://raw.githubusercontent.com/unsilo/photage-docker/${PHOTAGE_REF}"
 
 say()  { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
