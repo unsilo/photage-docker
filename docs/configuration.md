@@ -38,13 +38,13 @@ if there is not. It replaces the existing line rather than adding a second, so
 re-running it after a hardware change is safe.
 
 **This variable answers one question: is there a Hailo card?** It used to answer
-two. Up to 0.1.4 a third overlay, `docker-compose.python.yml`, selected a larger
-`-python` image, because Moondream's Python environment was only in that image
-and a Hailo-8 needed Moondream to caption at all. The environment is built on
-first enable now, so every image can do descriptions and the choice moved to the
-Classifiers page where it belongs. That overlay is still in the repo for installs
-that cannot reach PyPI when somebody ticks the box; nothing publishes the tag it
-selects, so `pull` with it in `COMPOSE_FILE` fails with `manifest unknown`.
+two: a third overlay once selected a larger image, because Moondream's Python
+environment was only in that image and a Hailo-8 needed Moondream to caption at
+all. The environment is built on first enable now, so every image can do
+descriptions and the choice moved to the Classifiers page where it belongs. If
+an old `.env` still names a captioning overlay in `COMPOSE_FILE`, remove it —
+nothing publishes the tag it selects, so `pull` with it fails with
+`manifest unknown`.
 
 Rules worth knowing:
 
@@ -298,13 +298,14 @@ the native clients will not connect.
 
 ### `PHOTAGE_TAG`
 
-Image tag to run. `0.1.4` pins it; `latest` tracks the newest release.
+Image tag to run. A version number pins it; `latest` tracks the newest
+release.
 
 Pin it. It turns upgrading into a decision rather than a side effect of
 `docker compose pull`.
 
-One image, one tag. There was a `-python` variant up to 0.1.4, whose tag was
-derived from this one; it is no longer published — see `COMPOSE_FILE` above.
+One image, one tag. There was once a captioning variant whose tag was derived
+from this one; it is no longer published — see `COMPOSE_FILE` above.
 
 ### `PHOTAGE_ALLOW_REGISTRATION`
 

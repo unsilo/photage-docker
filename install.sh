@@ -16,7 +16,7 @@
 # Environment overrides:
 #   PHOTAGE_DIR   install directory        (default ~/photage)
 #   PHOTAGE_REF   git ref to fetch from    (default main)
-#   PHOTAGE_TAG   image tag to run         (default 0.1.4)
+#   PHOTAGE_TAG   image tag to run         (default: the release this script shipped with)
 #   PHX_HOST     hostname to serve at     (default <hostname>.local, or localhost)
 #
 # It configures and then stops. It does not start the stack: on a machine with
@@ -145,26 +145,13 @@ say "installing into ${PHOTAGE_DIR}"
 mkdir -p "${PHOTAGE_DIR}"
 cd "${PHOTAGE_DIR}"
 
-for f in docker-compose.yml docker-compose.hailo.yml docker-compose.python.yml nginx.conf .env.example; do
+for f in docker-compose.yml docker-compose.hailo.yml nginx.conf .env.example; do
   say "fetching ${f}"
   curl -fsSL "${RAW}/${f}" -o "${f}.tmp" || die "could not fetch ${RAW}/${f}"
   mv "${f}.tmp" "${f}"
 done
 
-# docker-compose.moondream.yml was renamed to docker-compose.python.yml. Left in
-# place the stale file is harmless until someone's COMPOSE_FILE still names it,
-# at which point they are running an overlay that no longer receives fixes.
-if [[ -f docker-compose.moondream.yml ]]; then
-  rm -f docker-compose.moondream.yml
-  say "removed docker-compose.moondream.yml (superseded)"
-fi
 
-# Neither captioning overlay is needed any more: Moondream builds its Python
-# environment on first enable, so the default image can do descriptions and the
-# `-python` tag these overlays select is no longer published. An upgrader whose
-# COMPOSE_FILE still names one would get "manifest unknown" from the next
-# `pull`, which reads as a broken registry rather than a stale setting — so say
-# so plainly instead of leaving them to find out.
 if [[ -f .env ]] && grep -qE 'docker-compose\.(python|moondream)\.yml' .env; then
   warn "your .env names a captioning overlay in COMPOSE_FILE."
   warn "  It selects an image tag that is no longer published, so \`pull\` will fail."

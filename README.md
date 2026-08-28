@@ -37,31 +37,32 @@ That creates a folder at `~/photage`, fetches the compose files, creates your da
 
 ### 4. Final feature choices
 
-One thing is worth deciding on now. Everything else is a checkbox in the app
-later.
+Nothing here needs deciding to get a working install — these are the defaults
+and the opt-outs. Everything else is a checkbox in the app later.
 
 **Image descriptions need no decision here.** Every image can caption, on the
 CPU, with no accelerator — enable `moondream` on the Classifiers page and the
 first enable builds the Python environment it needs. That takes a few minutes
 once and the page tells you what it is doing. There is no separate image and no
-compose overlay. (`docker-compose.python.yml` still exists for installs that
-cannot reach the internet; read its header before using it.)
+compose overlay.
 
-**Place tags from GPS coordinates.** Two sources, and you pick one — or neither,
-in which case photos still import and keep their GPS EXIF, they just get no
+**Place tags from GPS coordinates are on by default.** The first boot
+downloads a ~15 MB copy of the GeoNames data — no account, no quota, and no
+coordinates ever leave the machine — and photos get country/state/place tags as
+they import. If the download fails the install still comes up, just without
 place tags.
 
 ```
-# local: no account, nothing leaves the machine, ~15 MB and ~185k rows
-PHOTAGE_LOAD_GAZETTEER=true
+# opt out — a firewalled or metered machine, or you want no place tags:
+PHOTAGE_LOAD_GAZETTEER=false
 
-# or online: needs a free geonames.org account, enabled for web services
+# optional fallback: a free geonames.org account, enabled for web services,
+# picks up coordinates the local data cannot place
 PHOTAGE_GEONAMES_USERNAME=your-account
 ```
 
-Set both and the web service becomes a fallback for coordinates the local data
-cannot place. Full detail, including how to load the gazetteer on an install
-that is already running, is in [docs/geonames.md](docs/geonames.md).
+Full detail, including how the two sources interact, is in
+[docs/geonames.md](docs/geonames.md).
 
 On a **Hailo-10H**, the `hailo-h10-all` install leaves you on HailoRT **5.1.1**,
 which accelerates classification but cannot do descriptions. Follow
@@ -89,10 +90,9 @@ too. (It was called `hailo-detect.sh`; it covers more than Hailo now.)
 | Hailo-8 | accelerated | software (moondream) | `docker-compose.yml:docker-compose.hailo.yml` |
 | no card | software | software (moondream) | `docker-compose.yml` |
 
-Two values, not four. Descriptions used to be the third dimension here — a
-Hailo-8 needed a `docker-compose.python.yml` overlay and a larger image to
-caption at all. It does not any more, so which classifier you run is decided in
-the app rather than in `.env`.
+Two values, not four. Descriptions used to be the third dimension here,
+needing their own overlay and a larger image. They do not any more, so which
+classifier you run is decided in the app rather than in `.env`.
 
 
 Then run 
@@ -176,10 +176,9 @@ Put that line in `.env` and every `docker compose` command picks it up — no `-
 flags to remember.
 
 `COMPOSE_FILE` only answers "do I have a Hailo card?". Which classifiers run is
-decided on the Classifiers page, not here. Up to 0.1.4 descriptions were a third
-overlay pulling a larger `-python` image; the Python environment Moondream needs
-is built on first enable now, so every image can caption and that overlay is
-only for installs with no internet access at enable time.
+decided on the Classifiers page, not here. Descriptions used to be a third
+overlay pulling a larger image; the Python environment Moondream needs is
+built on first enable now, so every image can caption.
 
 Three things worth knowing before you choose:
 
@@ -204,7 +203,7 @@ Three things worth knowing before you choose:
 
 | | |
 |---|---|
-| CPU | **arm64 only in 0.1.x** — see below |
+| CPU | **arm64 only, for now** — see below |
 | OS | 64-bit Linux. On a Raspberry Pi that means the **64-bit** build of Raspberry Pi OS; a 32-bit userland cannot run this image. |
 | Docker | Engine 24+ with the Compose v2 plugin |
 | Disk | ~3 GB for the images, plus your photo library |

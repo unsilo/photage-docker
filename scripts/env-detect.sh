@@ -72,7 +72,11 @@ APPEND=0
 [[ "${1:-}" == "--append" ]] && APPEND=1
 
 PY="${PHOTAGE_PYTHON:-/usr/bin/python3}"
-IMAGE="tehsnappysoftware/photage:${PHOTAGE_TAG:-0.1.4}"
+# The image the ABI check interrogates — match what this install actually
+# runs: an exported PHOTAGE_TAG, else the pin in ./.env, else latest.
+TAG="${PHOTAGE_TAG:-}"
+[[ -z "$TAG" && -f .env ]] && TAG="$(grep -E '^PHOTAGE_TAG=' .env | head -1 | cut -d= -f2-)"
+IMAGE="tehsnappysoftware/photage:${TAG:-latest}"
 
 ok()   { printf '\033[1;32m  ok\033[0m  %s\n' "$*"; }
 bad()  { printf '\033[1;31mfail\033[0m  %s\n' "$*"; FAILED=1; }
@@ -322,11 +326,11 @@ fi
 #   any Hailo card   hailo overlay   the card does detection and classification
 #   no card          base only       everything works, the AI is just slow
 #
-# There used to be a third: a Hailo-8 also got docker-compose.python.yml,
-# because the card cannot caption and Moondream's Python environment lived only
-# in a separate `-python` image. That image is gone — the environment is built on
-# first enable now — so captioning is a checkbox rather than a compose decision,
-# and this script has no business having an opinion about it.
+# There used to be a third answer, for captioning on a card that cannot do it
+# itself, selecting a larger image. That image is gone — Moondream's Python
+# environment is built on first enable now — so captioning is a checkbox rather
+# than a compose decision, and this script has no business having an opinion
+# about it.
 HAILO_USABLE=0
 [[ -n "$HAILO_GID$HAILO_PYTHON_PACKAGE$HAILORT_LIB" ]] && HAILO_USABLE=1
 
@@ -560,13 +564,11 @@ echo "  that is qwen2, accelerated. Otherwise moondream, on the CPU: the"
 echo "  first enable builds its Python environment, a few minutes and an"
 echo "  internet connection, once."
 echo
-echo "  PLACE TAGS — turn GPS coordinates into country/state/place tags."
-echo "  Either a local copy of the GeoNames data, no account and nothing"
-echo "  leaving the machine (a 15 MB download and ~185k rows):"
-echo
-echo "      PHOTAGE_LOAD_GAZETTEER=true"
-echo
-echo "  or a free geonames.org account. See docs/geonames.md."
+echo "  PLACE TAGS — GPS coordinates become country/state/place tags, on by"
+echo "  default: the first boot fetches a local copy of the GeoNames data,"
+echo "  no account and nothing leaving the machine. Opt out with"
+echo "  PHOTAGE_LOAD_GAZETTEER=false, or add a free geonames.org account as"
+echo "  a fallback. See docs/geonames.md."
 echo "  ---------------------------------------------------------------"
 
 if [[ "$APPEND" != "1" ]]; then

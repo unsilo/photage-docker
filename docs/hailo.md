@@ -34,7 +34,7 @@ hailortcli fw-control identify
 
 
 
-> **Experimental in 0.1.0.** The bare-metal path is verified — object detection
+> **Experimental.** The bare-metal path is verified — object detection
 > and scene classification have been checked against known-answer images on both
 > a Hailo-8 and a Hailo-10H. **The containerised path in this document has not
 > been.** If you want a working accelerator today rather than a working
@@ -113,8 +113,9 @@ container's interpreter.
 If you are on Bookworm, the options today are: upgrade the host to Trixie
 (which also moves you onto the current Hailo packages), or run Photage on bare
 metal instead of in Docker. A future release will publish image variants with
-matching bindings baked in and tagged by HailoRT version — `:0.2.0-hailort4.20`
-and so on — which removes this constraint. It is not in 0.1.0.
+matching bindings baked in and tagged by HailoRT version —
+`:<version>-hailort4.20` and so on — which removes this constraint. It is not
+here yet.
 
 ---
 
@@ -652,11 +653,11 @@ the Pi's CPU, entirely independent of the accelerator, so your Hailo-8 keeps
 doing detection and classification while the CPU does captions.
 
 **Nothing to change in compose.** Enable **moondream** at `/classifier` — not
-qwen2 — and that is the whole procedure. Up to 0.1.4 this needed a
-`docker-compose.python.yml` overlay and a larger `-python` image, because
-Moondream's ~350 MB Python environment existed only in that image. It is now
-built on demand: the default image carries the environment's `pyproject.toml`
-and `uv.lock` plus `uv`, and the first enable builds it.
+qwen2 — and that is the whole procedure. This once needed its own compose
+overlay and a larger image, because Moondream's ~350 MB Python environment
+existed only in that image. It is now built on demand: the default image
+carries the environment's `pyproject.toml` and `uv.lock` plus `uv`, and the
+first enable builds it.
 
 That first enable takes a while and needs the internet. The classifier row shows
 each stage while it works:
@@ -687,10 +688,9 @@ Snex looked for its interpreter at
 /app/snex/projects/Elixir.Photage.Classifications.MoondreamInterpreter/venv/bin/python
 ```
 
-found nothing, and passed `nil` to `open_port`. On 0.1.4 that meant you were on
-the default image rather than the `-python` one, and the fix was to change
-images. From 0.1.5 the environment builds itself, so this error means the build
-did not happen or could not — and the row's `load_error` says which. Check:
+found nothing, and passed `nil` to `open_port`. The environment builds itself,
+so this error means the build did not happen or could not — and the row's
+`load_error` says which. Check:
 
 ```bash
 # is the scaffolding there? pyproject.toml and uv.lock, no venv yet is normal
@@ -701,9 +701,9 @@ docker compose exec photage uv --version
 ```
 
 Most likely causes, in order: no route to PyPI or python-build-standalone when
-the box was ticked; a container with no writable space left; or an image built
-before 0.1.5, where nothing can rebuild the environment because the
-`pyproject.toml` was deleted along with the venv.
+the box was ticked; a container with no writable space left; or a very old
+image, where nothing can rebuild the environment because the `pyproject.toml`
+was deleted along with the venv.
 
 `PHOTAGE_PYTHON` is unrelated — that points the *Hailo* workers at an
 interpreter. Moondream manages its own.
@@ -966,5 +966,5 @@ Two behaviours worth knowing before you point it at a library:
 If the container path does not work for you, Photage also runs directly on the
 host — that is how it is developed, and it is the configuration the accelerator
 has actually been verified in. The image is what is published today; a bare
-metal distribution is not. If you need Hailo acceleration in 0.1.0 badly enough
-to want that, open an issue.
+metal distribution is not. If you need Hailo acceleration badly enough to want
+that, open an issue.

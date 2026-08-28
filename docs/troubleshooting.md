@@ -154,7 +154,7 @@ Same cause as above, one step later: the image was pulled for the wrong
 architecture and the binaries inside it will not run.
 
 ```bash
-docker image inspect tehsnappysoftware/photage:0.1.4 --format '{{.Architecture}}'
+docker image inspect tehsnappysoftware/photage:latest --format '{{.Architecture}}'
 uname -m
 ```
 
@@ -377,7 +377,7 @@ free -h
 docker stats --no-stream
 ```
 
-Idle memory use is higher than it should be in 0.1.0 — the numerical runtime
+Idle memory use is higher than it should be — the numerical runtime
 loads at boot whether or not any classifier is enabled.
 
 **Postgres is competing for the same cores.** On a Pi, `POOL_SIZE=6` is about
