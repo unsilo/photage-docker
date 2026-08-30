@@ -4,10 +4,11 @@ Photos carry GPS coordinates in their EXIF. Turning those into country, state
 and place tags needs a gazetteer — a list of places with coordinates — and
 Photage can get one two ways.
 
-**Both are optional, neither implies the other, and having neither is a
-supported configuration.** With no source at all, photos import normally, keep
-their GPS EXIF, and sit in the Unlocated smart album where you can place them by
-hand. Nothing is broken and nothing nags you.
+**The local gazetteer is on by default; the web service is opt-in; neither
+implies the other, and having neither is a supported configuration.** With no
+source at all, photos import normally, keep their GPS EXIF, and sit in the
+Unlocated smart album where you can place them by hand. Nothing is broken and
+nothing nags you.
 
 | | account | data leaves the machine | speed | disk |
 |---|---|---|---|---|
@@ -49,20 +50,18 @@ means no account, no quota, no rate limit, and no coordinates sent anywhere.
 
 ### On a new install
 
-In `.env`:
+Nothing to do — `PHOTAGE_LOAD_GAZETTEER` defaults to `true`, so the first boot
+downloads ~15 MB from `download.geonames.org` and loads ~185,000 towns. That
+boot takes several minutes and the container reports itself unhealthy while it
+works — the healthcheck allows a 300-second start period for exactly this. If
+the download fails (firewalled, metered, offline), the install still comes up
+and the failure is logged; the next boot tries again. To opt out, in `.env`:
 
 ```
-PHOTAGE_LOAD_GAZETTEER=true
+PHOTAGE_LOAD_GAZETTEER=false
 ```
 
-```bash
-docker compose up -d
-```
-
-The next boot downloads ~15 MB from `download.geonames.org` and loads ~185,000
-towns. That boot takes several minutes and the container reports itself
-unhealthy while it works — the healthcheck allows a 300-second start period for
-exactly this. Watch it:
+Watch the first boot:
 
 ```bash
 docker compose logs -f photage
@@ -79,9 +78,9 @@ You do not have to restart. This does the same work immediately:
 docker compose exec photage /app/bin/photage eval 'Photage.Release.load_gazetteer()'
 ```
 
-It runs in the foreground and prints progress. Set `PHOTAGE_LOAD_GAZETTEER=true`
-in `.env` afterwards anyway, so a future `docker compose down -v` does not
-quietly leave you without it.
+It runs in the foreground and prints progress. Leave `PHOTAGE_LOAD_GAZETTEER`
+at its default of `true`, and a future `docker compose down -v` cannot quietly
+leave you without it — the next boot rebuilds.
 
 ### Then push the backlog
 

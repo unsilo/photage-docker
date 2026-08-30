@@ -14,7 +14,7 @@ and prints what is switched on.
 
 ```bash
 ./scripts/update-photage --check       # say what would change, write nothing
-./scripts/update-photage 0.1.6         # pin PHOTAGE_TAG to a version and go
+./scripts/update-photage <version>     # pin PHOTAGE_TAG to that version and go
 ./scripts/update-photage --no-backup   # skip the pg_dump
 ```
 
@@ -55,7 +55,7 @@ change it. That is the point: upgrading becomes a decision rather than a side
 effect.
 
 ```
-PHOTAGE_TAG=0.2.0
+PHOTAGE_TAG=<the new version>
 ```
 
 ### Also refresh the compose files
@@ -102,7 +102,7 @@ if this reports `mode NONE`, see [geonames.md](geonames.md).
 ### Back out of an upgrade
 
 ```
-PHOTAGE_TAG=0.1.4
+PHOTAGE_TAG=<the version you were on>
 ```
 
 ```bash

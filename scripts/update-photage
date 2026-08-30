@@ -3,7 +3,7 @@
 # Update a Photage install. Run it from your Photage directory:
 #
 #   ./scripts/update-photage                 # update to the newest release
-#   ./scripts/update-photage 0.1.6           # update to a specific version
+#   ./scripts/update-photage <version>       # update to a specific version
 #   ./scripts/update-photage --check         # say what would change, do nothing
 #   ./scripts/update-photage --no-backup     # skip the database dump
 #
@@ -127,7 +127,7 @@ fi
 
 step "2/5  refresh compose files and scripts"
 
-FILES=(docker-compose.yml docker-compose.hailo.yml docker-compose.python.yml nginx.conf .env.example)
+FILES=(docker-compose.yml docker-compose.hailo.yml nginx.conf .env.example)
 SCRIPTS=(env-detect.sh download-models.sh upgrade-hailort.sh rollback-hailort.sh update-photage)
 
 fetch() {

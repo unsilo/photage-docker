@@ -81,10 +81,11 @@ services:
       # and no coordinates leaving the machine. Costs a ~15 MB download and
       # ~185k rows the first time it is switched on.
       #
-      # Off by default on purpose: creating a container is not consent to fetch
-      # 15 MB. Set it true and the next boot builds it — which is the one boot
-      # that can take minutes, and what the healthcheck's 300s start period is
-      # there to cover.
+      # ON by default: the first boot fetches ~15 MB from download.geonames.org
+      # and builds the table — the one boot that can take minutes, and what the
+      # healthcheck's 300s start period is there to cover. A failed download is
+      # logged and skipped, never a crash loop. Set it false if the machine is
+      # firewalled or metered, or you would rather use an account (source 2).
       #
       # Safe to leave true forever. Photage.Geo.Import.ensure_loaded/1 checks the
       # table before downloading, so every boot after the first is one query.
@@ -94,7 +95,7 @@ services:
       #
       # Loading it does NOT place photos already imported: geocoding runs on
       # import. Push the backlog from the Repairs panel's Unlocated entry.
-      PHOTAGE_LOAD_GAZETTEER: ${PHOTAGE_LOAD_GAZETTEER:-false}
+      PHOTAGE_LOAD_GAZETTEER: ${PHOTAGE_LOAD_GAZETTEER:-true}
 
       # SOURCE 2: the geonames.org web service. Off unless you supply an
       # account, because the account has to be yours — this is an online lookup

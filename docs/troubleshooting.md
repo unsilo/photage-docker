@@ -64,6 +64,38 @@ PHOTAGE_IMAGE_URL_BASE=http://photage.local:8080
 Both lines. Setting only the first gives you a working site where no image
 loads.
 
+### `Bind for 127.0.0.1:4000 failed: port is already allocated`
+
+Docker's wording for the same problem, on the app container's direct bind
+rather than the proxy's port 80. On a machine that ran a pre-rename PhoTog
+install this is almost always the old `photog` stack, still running and
+holding both ports:
+
+```bash
+docker ps --filter "publish=4000"
+```
+
+If that shows the old containers, stop that stack from its old install folder
+— or by compose project name if the folder is gone:
+
+```bash
+cd ~/photog && docker compose down
+# or
+docker compose -p photog down
+```
+
+`down` leaves the old volumes (`photog-db`, `photog-warehouse`,
+`photog-cache`) in place. Photage does not read them, so they are a rollback
+option and nothing more; `docker volume rm` them once you are done with the
+old install.
+
+If `docker ps` shows nothing publishing 4000, the holder is not a container —
+`sudo ss -ltnp | grep ':4000'` names the process (a development
+`mix phx.server`, most commonly). Either stop it or move the direct bind out
+of its way with `PHOTAGE_DIRECT_BIND=127.0.0.1:4001`.
+
+Then `docker compose up -d` again.
+
 ### `photage.local` does not resolve
 
 mDNS is not universal. From another machine:
@@ -122,7 +154,7 @@ Same cause as above, one step later: the image was pulled for the wrong
 architecture and the binaries inside it will not run.
 
 ```bash
-docker image inspect tehsnappysoftware/photage:0.1.4 --format '{{.Architecture}}'
+docker image inspect tehsnappysoftware/photage:latest --format '{{.Architecture}}'
 uname -m
 ```
 
@@ -345,7 +377,7 @@ free -h
 docker stats --no-stream
 ```
 
-Idle memory use is higher than it should be in 0.1.0 — the numerical runtime
+Idle memory use is higher than it should be — the numerical runtime
 loads at boot whether or not any classifier is enabled.
 
 **Postgres is competing for the same cores.** On a Pi, `POOL_SIZE=6` is about

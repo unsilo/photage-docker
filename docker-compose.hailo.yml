@@ -1,4 +1,4 @@
-# Hailo overlay — EXPERIMENTAL in 0.1.0. Read docs/hailo.md before using it.
+# Hailo overlay — EXPERIMENTAL. Read docs/hailo.md before using it.
 #
 #   docker compose -f docker-compose.yml -f docker-compose.hailo.yml up -d
 #
