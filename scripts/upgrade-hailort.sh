@@ -194,7 +194,7 @@ fi
 # HAILO_STREAM_NOT_ACTIVATED(72) and HAILO_STREAM_ABORT(63) mid-inference,
 # which reads as an application bug, and unpicking it takes an evening. There
 # is no reason to run this script on one: captioning is Hailo-10H only.
-IDENT="$(sudo hailortcli fw-control identify 2>/dev/null || true)"
+IDENT="$( (sudo hailortcli fw-control identify 2>/dev/null || true) | tr -d '\000')"
 
 # The `|| true` is load-bearing. Under `set -euo pipefail`, grep finding
 # nothing makes the whole pipeline status 1, and because that status lands on

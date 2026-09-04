@@ -19,27 +19,6 @@
 #   --zoo-version   Hailo Model Zoo. Used for the VISION model URL path, which
 #                   is versioned by the model zoo, NOT by the runtime.
 #
-# They coincide on the Hailo-10H line and do not on the Hailo-8 line — see the
-# comment above the ZOO_VERSION resolution below, which is the whole story.
-#
-# HEFs are not in the image: they are large, and Hailo's Dataflow Compiler and
-# model-zoo terms are a licensing question of their own. They are also not
-# interchangeable — a build is compiled for one architecture AND one SDK
-# version, and getting either wrong produces a failure that names neither.
-#
-# Two things this does that a plain curl does not:
-#
-#   1. Verifies the SDK version recorded in the downloaded bytes before
-#      installing the file, and refuses a mismatch. A HEF built for a newer
-#      HailoRT than you run loads fine on the vision path and is rejected by the
-#      GenAI path — so "it downloaded" is not "it will work".
-#
-#   2. Normalises the filename. Upstream publishes the VLM as
-#      Qwen2-VL-2B-Instruct.hef; the classifier row asks for
-#      qwen2-vl-2b-instruct.hef. Linux is case-sensitive, and a case-only
-#      mismatch resolves silently to a file that is not there.
-#
-# The VLM is ~3 GB. The vision models are tens of MB.
 
 set -euo pipefail
 
@@ -157,12 +136,6 @@ if [[ $LIST_ONLY -eq 1 ]]; then
 fi
 
 
-# --- where the files go ----------------------------------------------------
-#
-# The compose overlay mounts PHOTAGE_MODELS_PATH at /app_cache/models, which is
-# where the app looks. Reading it out of .env means this script and the stack
-# cannot disagree about the location.
-
 if [[ -z "$DEST" ]]; then
   if [[ -f .env ]] && grep -qE '^PHOTAGE_MODELS_PATH=' .env; then
     DEST="$(grep -E '^PHOTAGE_MODELS_PATH=' .env | head -1 | cut -d= -f2-)"
@@ -174,15 +147,10 @@ if [[ -z "$DEST" ]]; then
   fi
 fi
 
-# --- which chip ------------------------------------------------------------
-#
-# Asking the device beats asking the user. hailo8/ and hailo10h/ are different
-# compilations of the same network and a wrong one fails at load with an error
-# that does not mention architecture.
 
 if [[ -z "$ARCH" ]]; then
   if command -v hailortcli >/dev/null 2>&1; then
-    ident="$(sudo hailortcli fw-control identify 2>/dev/null || hailortcli fw-control identify 2>/dev/null || true)"
+    ident="$( (sudo hailortcli fw-control identify 2>/dev/null || hailortcli fw-control identify 2>/dev/null || true) | tr -d '\000')"
     case "$ident" in
       *HAILO10H*) ARCH="hailo10h" ;;
       *HAILO15H*) ARCH="hailo15h" ;;
@@ -220,17 +188,6 @@ fi
 #   Hailo-8 / 8L     model zoo v2.x  +  Dataflow Compiler v3.x  +  HailoRT 4.x
 #   Hailo-10H / 15H  model zoo v5.x  == Dataflow Compiler v5.x  == HailoRT 5.x
 #
-# From 5.0.0 onward all three numbers are the same, which is exactly why the
-# bug hid: on a Hailo-10H running 5.3.0, .../Compiled/v5.3.0/hailo10h/ is
-# correct by coincidence. On a Hailo-8 running HailoRT 4.20.0 the script asked
-# for .../Compiled/v4.20.0/hailo8l/, which has never existed — a 404 reported
-# as "not every model is compiled for every architecture".
-#
-# The 2.x <-> 4.x mapping is not calculable from the runtime: v2.14 is HailoRT
-# 4.20.0, v2.15 is 4.21.0, v2.16 is 4.22.0, and the branch has moved on since
-# without publishing the correspondence anywhere machine-readable. So this is a
-# default you override, not something inferred. The Hailo-8/8L models live on
-# the model zoo's v2.x branch; master is Hailo-10/15 only.
 case "$ARCH" in
   hailo8|hailo8l) ZOO_UNIFIED=0 ;;
   *)              ZOO_UNIFIED=1 ;;
@@ -374,10 +331,6 @@ for entry in "${MODELS[@]}"; do
       continue
     fi
   else
-    # Reported, deliberately not enforced. Comparing a Dataflow Compiler 3.x
-    # number against a HailoRT 4.x number would be arithmetic across two
-    # unrelated scales — it would produce confident nonsense in both directions.
-    # The honest check on this line is whether the classifier loads.
     info "${name}: sdk-version ${got:-unreadable} (compiler version — recorded, not enforced)"
   fi
 

@@ -169,7 +169,7 @@ if command -v hailortcli >/dev/null 2>&1; then
   # Kept as a bare x.y.z for the captioning check at the end. The banner text
   # around it has changed between releases; the number has not.
   HAILORT_VERSION="$(printf '%s' "$ver" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
-  ident="$(hailortcli fw-control identify 2>&1 | grep -iE 'Device Architecture|Board Name' | head -2)"
+  ident="$(hailortcli fw-control identify 2>&1 | tr -d '\000' | grep -aiE 'Device Architecture|Board Name' | head -2)"
   # Which chip, for the captioning advice at the end: qwen2 needs a Hailo-10H,
   # so a Hailo-8 owner has to be told about the CPU path or they get nothing.
   case "$ident" in
@@ -235,7 +235,8 @@ import os
 try:
     import hailo_platform
 except Exception as e:
-    raise SystemExit(f"IMPORTERROR {e}")
+    print(f"IMPORTERROR {type(e).__name__}: {e}")
+    raise SystemExit(0)
 print(os.path.dirname(os.path.abspath(hailo_platform.__file__)))
 PYEOF
 )"

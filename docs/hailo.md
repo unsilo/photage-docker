@@ -30,22 +30,9 @@ After the reboot, check the card is alive before going further:
 hailortcli fw-control identify
 ```
 
-
-
-
-
-> **Experimental.** The bare-metal path is verified — object detection
-> and scene classification have been checked against known-answer images on both
-> a Hailo-8 and a Hailo-10H. **The containerised path in this document has not
-> been.** If you want a working accelerator today rather than a working
-> experiment, this is not yet the way to get one.
-
 Photage can use a Hailo M.2 accelerator for object detection (YOLO), scene
 classification (ResNet-50) and, on a Hailo-10H, image captioning. Everything
 else works without one, and every classifier ships disabled.
-
-Get Photage running on the CPU first. An accelerator adds classification to a
-working install; it is not part of getting one.
 
 ---
 
@@ -173,13 +160,6 @@ sudo apt install --reinstall hailofw          # Hailo-8 / 4.x only
 sudo apt install --reinstall hailo-h10-all    # Hailo-10H / 5.x
 ```
 
-On a Hailo-8 that has been the entire fix twice.
-
-`hailofw` is the archive's **Hailo-8** firmware package and it does not exist on
-the 5.x line at all. `Unable to locate package hailofw` on a Hailo-10H box is
-not a broken apt or a missing repository — it means you are on the 5.x stack and
-are reading advice for the other card.
-
 ### 2. Detect
 
 From your Photage directory:
@@ -290,21 +270,6 @@ is usually I/O bound — JPEG decode, thumbnailing and Postgres dominate on a Pi
 so the FPS column often does not reach the wall clock at all. Watch
 `hailortcli monitor` during an import before optimising it.
 
-Larger variants exist upstream (`yolov11l` at 52.3 mAP, `yolov11x` at 53.1) but
-are not in the catalogue and have no classifier row in the app. The curve goes
-flat there anyway: `l` buys +2.4 mAP over `m` for −24% FPS, while `x` buys only
-+0.8 more for another −52%.
-
-A misspelled name is an error, not a silent no-op — `--skip qwen2` (the real
-name is `qwen2-vl`) stops the script rather than downloading the 3 GB file you
-typed the flag to avoid.
-
-**What omitting a model costs you.** Nothing crashes. The classifier simply does
-not start, and its `load_error` at `/classifier` says the HEF is missing — which
-is indistinguishable from a broken install if you have forgotten you skipped it.
-The script says so on the way out for that reason. Fetch it whenever you like;
-re-running is cheap, because a model already present at the right SDK version is
-left alone:
 
 ```bash
 ./scripts/download-models.sh
@@ -968,3 +933,62 @@ host — that is how it is developed, and it is the configuration the accelerato
 has actually been verified in. The image is what is published today; a bare
 metal distribution is not. If you need Hailo acceleration badly enough to want
 that, open an issue.
+
+
+
+---
+On a **Hailo-10H**, the `hailo-h10-all` install leaves you on HailoRT **5.1.1**,
+which accelerates classification but cannot do descriptions. Follow
+[docs/upgrade_hailo.md](docs/upgrade_hailo.md) to enable accelerated
+descriptions.
+
+Run the following commands to scan for your Hailo card and append the relevant information to your `.env` file.
+```bash
+cd ~/photage
+./scripts/env-detect.sh --append   # writes the device settings into .env
+```
+
+`env-detect.sh` inspects the machine and writes what only the machine can tell
+you: the Hailo device node, group id and library paths. It also **sets
+`COMPOSE_FILE`** to match what it found, so step 5 is usually already done.
+
+It is safe and useful to re-run at any time — after a hardware change, after a
+HailoRT upgrade, or just to be told what this box can do. It writes nothing
+without `--append`, and it reports on the optional features that need no hardware
+too. (It was called `hailo-detect.sh`; it covers more than Hailo now.)
+
+| Card | Classifications | Descriptions | COMPOSE_FILE value |
+|---|---|---|---|
+| Hailo-10H | accelerated | accelerated (qwen2) | `docker-compose.yml:docker-compose.hailo.yml` |
+| Hailo-8 | accelerated | software (moondream) | `docker-compose.yml:docker-compose.hailo.yml` |
+| no card | software | software (moondream) | `docker-compose.yml` |
+
+Two values, not four. Descriptions used to be the third dimension here,
+needing their own overlay and a larger image. They do not any more, so which
+classifier you run is decided in the app rather than in `.env`.
+
+
+Then run 
+```bash
+cd ~/photage
+./scripts/download-models.sh         # fetches the .hef model files
+```
+
+`download-models.sh` fetches all three models by default, and the captioning one
+is ~3 GB. Skip it with `--vision-only` — on a Hailo-8 it cannot be used anyway.
+`--list` shows what there is.
+
+### 5. Choose your features — usually already done
+
+If step 4 ran with `--append`, `COMPOSE_FILE` is set. Check it:
+
+```bash
+grep COMPOSE_FILE ~/photage/.env
+```
+
+Otherwise set it in `.env` yourself, from
+[the table below](#what-the-ai-features-give-you). For a Hailo-10H:
+
+```
+COMPOSE_FILE=docker-compose.yml:docker-compose.hailo.yml
+```

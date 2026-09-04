@@ -256,7 +256,19 @@ else
     short="$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo photage)"
     # mDNS gives .local on a Pi or a Mac; anywhere else it may not resolve, and
     # the value is easy to change afterwards.
-    host="${short}.local"
+    default_host="${short}.local"
+    if [[ -r /dev/tty ]]; then
+      printf '\n'
+      echo "What hostname will you use for Photage?"
+      echo
+      echo "  A hostname or IP address, no http:// and no port. 
+      echo
+      read -r -p "hostname [${default_host}]: " ans < /dev/tty || true
+      host="${ans:-$default_host}"
+      host="${host#http://}"; host="${host#https://}"; host="${host%%/*}"
+    else
+      host="$default_host"
+    fi
   fi
 
   admin_email="${PHOTAGE_ADMIN_EMAIL:-}"
@@ -292,16 +304,11 @@ else
 # Written by install.sh on $(date -u '+%Y-%m-%d %H:%M UTC').
 # Full reference: https://github.com/unsilo/photage-docker/blob/main/.env.example
 
-# Which compose files to use. Compose reads this from .env, so every
-# \`docker compose\` command in this directory picks them up with no -f flags.
+
 # There is one overlay worth adding, and only if you have a Hailo card:
-#
+
 #   Hailo accelerator      docker-compose.yml:docker-compose.hailo.yml
 #
-# It also needs the values scripts/env-detect.sh prints.
-#
-# Image descriptions are NOT a compose choice — every image can caption, and the
-# environment for it is built the first time you enable the classifier.
 COMPOSE_FILE=docker-compose.yml
 
 PHX_HOST=${host}
@@ -313,11 +320,6 @@ PHOTAGE_ADMIN_PASSWORD=${admin_pass}
 
 PHOTAGE_TAG=${PHOTAGE_TAG}
 
-# Your data. All three are ordinary directories on this machine, owned by uid
-# 1000 so the container can write them. Move them by changing these values and
-# running \`docker compose up -d\` — copy the contents across first, with
-# \`sudo cp -a\` so ownership is preserved.
-#
 # Photo library: originals and thumbnails. The one that must be backed up.
 PHOTAGE_WAREHOUSE_PATH=${data_root}/warehouse
 # Drop photos here to import them.
@@ -340,22 +342,6 @@ PHX_HOST_EFFECTIVE="$(grep -E '^PHX_HOST=' .env | cut -d= -f2-)"
 PORT_EFFECTIVE="$(grep -E '^PHOTAGE_HTTP_PORT=' .env | cut -d= -f2- || true)"
 PORT_EFFECTIVE="${PORT_EFFECTIVE:-80}"
 
-# --- what to do next -------------------------------------------------------
-#
-# This installer deliberately does NOT start the stack.
-#
-# Starting here would be wrong on any machine with an accelerator: COMPOSE_FILE
-# is `docker-compose.yml` at this point, so `up -d` would build a base-stack
-# container with no device, no HailoRT mounts and an empty models directory —
-# and then the real configuration would need `--force-recreate` to replace it.
-# The first thing the user sees would be an install that appears to work and
-# quietly cannot classify anything.
-#
-# Hailo setup also has to come first in the other direction: env-detect.sh
-# reads the device to write HAILO_DEVICE, HAILO_GID and the libhailort soname,
-# and none of that can be known before the hardware is inspected.
-#
-# So: configure, then hand over.
 
 printf '\n'
 if [[ "$PORT_EFFECTIVE" == "80" ]] && ss -ltn 2>/dev/null | grep -qE ':80\s'; then
@@ -384,13 +370,6 @@ if [[ "$have_hailo" == "1" ]]; then
   echo "    cd ${PHOTAGE_DIR}"
   echo "    ./scripts/env-detect.sh --append    # writes the device settings to .env"
   echo "    ./scripts/download-models.sh          # fetches the .hef model files"
-  echo
-  echo "  Then add the overlay to COMPOSE_FILE in .env — env-detect.sh prints"
-  echo "  the exact line for your hardware, including the captioning options:"
-  echo
-  echo "    COMPOSE_FILE=docker-compose.yml:docker-compose.hailo.yml"
-  echo
-  echo "  And start it:"
   echo
   echo "    docker compose up -d"
 else
