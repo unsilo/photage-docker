@@ -5,25 +5,6 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/unsilo/photage-docker/main/install.sh | bash
 #
-# or, if you would rather read it first (you should):
-#
-#   curl -fsSLO https://raw.githubusercontent.com/unsilo/photage-docker/main/install.sh
-#   less install.sh && bash install.sh
-#
-# It is safe to re-run: an existing .env is never overwritten, and the compose
-# files are refreshed in place.
-#
-# Environment overrides:
-#   PHOTAGE_DIR   install directory        (default ~/photage)
-#   PHOTAGE_REF   git ref to fetch from    (default main)
-#   PHOTAGE_TAG   image tag to run         (default: the release this script shipped with)
-#   PHX_HOST     hostname to serve at     (default <hostname>.local, or localhost)
-#
-# It configures and then stops. It does not start the stack: on a machine with
-# an accelerator, starting before scripts/env-detect.sh has run produces a
-# container with no device and an empty models directory, which looks like a
-# working install that cannot classify anything. The last thing it prints is
-# the exact command to run next.
 
 set -euo pipefail
 
@@ -169,30 +150,6 @@ for s in env-detect.sh update-photage download-models.sh upgrade-hailort.sh roll
   fi
 done
 
-# hailo-detect.sh became env-detect.sh: same job, but it also writes defaults for
-# capabilities that have nothing to do with the accelerator, so the name was
-# actively misleading about where to add the next one. Left on disk the old copy
-# keeps working for a while and then quietly stops matching the docs, which is
-# the worst of both.
-if [[ -f scripts/hailo-detect.sh ]]; then
-  rm -f scripts/hailo-detect.sh
-  say "removed scripts/hailo-detect.sh (now scripts/env-detect.sh)"
-fi
-
-# --- .env ------------------------------------------------------------------
-
-# --- where the data lives --------------------------------------------------
-#
-# Asked once, up front, because the two defaults are both bad in different ways:
-# with PHOTAGE_WAREHOUSE_PATH unset the photo library goes into a named volume
-# under /var/lib/docker — the SD card on a Pi, and somewhere nobody thinks to
-# back up — and with PHOTAGE_MODELS_PATH unset the Hailo overlay refuses to start
-# at all. Both are easy to change later; neither is easy to notice.
-#
-# The database is deliberately NOT moved here. Postgres is fussy about the
-# ownership and mode of its data directory, a bind mount adds a failure mode
-# with no benefit for a database you should be backing up with pg_dump anyway,
-# and `docker compose down -v` is the only thing that would lose it.
 
 if [[ -f .env ]]; then
   say ".env already exists — leaving it alone"
@@ -305,10 +262,6 @@ else
 # Full reference: https://github.com/unsilo/photage-docker/blob/main/.env.example
 
 
-# There is one overlay worth adding, and only if you have a Hailo card:
-
-#   Hailo accelerator      docker-compose.yml:docker-compose.hailo.yml
-#
 COMPOSE_FILE=docker-compose.yml
 
 PHX_HOST=${host}
@@ -327,10 +280,7 @@ PHOTAGE_IMPORT_PATH=${data_root}/import
 # Hailo .hef model files, and (see docs) the bumblebee HuggingFace cache.
 # Only used with docker-compose.hailo.yml, which requires it.
 PHOTAGE_MODELS_PATH=${data_root}/models
-${db_path:+# The database, on your own filesystem so \`down -v\` cannot take it.
-# Do NOT chown this — the postgres image manages its own ownership.
-# Still take pg_dump backups: a raw data directory is readable only by the
-# Postgres major version that wrote it.
+# Postgres data location.
 PHOTAGE_DB_PATH=${db_path}}
 ENV
   chmod 600 .env
@@ -378,10 +328,6 @@ else
   echo "    cd ${PHOTAGE_DIR}"
   echo "    docker compose up -d"
   echo
-  echo "  Classification and image descriptions both work without an"
-  echo "  accelerator, on the CPU. Enable them on the Classifiers page; the"
-  echo "  first enable of Moondream builds its Python environment, which takes"
-  echo "  a few minutes once."
 fi
 
 import_dir="$(grep -E '^PHOTAGE_IMPORT_PATH=' .env | head -1 | cut -d= -f2- || true)"

@@ -59,42 +59,14 @@ services:
       PHOTAGE_ADMIN_EMAIL: ${PHOTAGE_ADMIN_EMAIL:-}
       PHOTAGE_ADMIN_PASSWORD: ${PHOTAGE_ADMIN_PASSWORD:-}
 
-      # Self-service signup, off by default. Photage has no per-user ownership of
-      # photos, albums or tags — a second account is a second key to the same
-      # library, not a second library. See docs/configuration.md.
       PHOTAGE_ALLOW_REGISTRATION: ${PHOTAGE_ALLOW_REGISTRATION:-false}
-
-      # The directory the import screen starts in. Bind-mounted below.
       PHOTAGE_PHOTO_SOURCE: /import
-
-      # Both python workers run under this interpreter. Set explicitly because
-      # Port.open/2 does no PATH lookup of its own.
       PHOTAGE_PYTHON: /usr/bin/python3
 
-      # Reverse geocoding turns a photo's GPS coordinates into country, state
-      # and place tags. There are TWO sources, both optional and neither
-      # implying the other. With neither, photos still import and still keep
-      # their GPS EXIF — they get no place tags and wait in Unlocated.
-      # See docs/geonames.md.
-
-      # SOURCE 1: a local copy of the GeoNames gazetteer. No account, no quota,
-      # and no coordinates leaving the machine. Costs a ~15 MB download and
-      # ~185k rows the first time it is switched on.
-      #
-      # ON by default: the first boot fetches ~15 MB from download.geonames.org
-      # and builds the table — the one boot that can take minutes, and what the
-      # healthcheck's 300s start period is there to cover. A failed download is
-      # logged and skipped, never a crash loop. Set it false if the machine is
-      # firewalled or metered, or you would rather use an account (source 2).
-      #
-      # Safe to leave true forever. Photage.Geo.Import.ensure_loaded/1 checks the
-      # table before downloading, so every boot after the first is one query.
       # To build it without restarting:
       #
       #   docker compose exec photage /app/bin/photage eval 'Photage.Release.load_gazetteer()'
       #
-      # Loading it does NOT place photos already imported: geocoding runs on
-      # import. Push the backlog from the Repairs panel's Unlocated entry.
       PHOTAGE_LOAD_GAZETTEER: ${PHOTAGE_LOAD_GAZETTEER:-true}
 
       # SOURCE 2: the geonames.org web service. Off unless you supply an

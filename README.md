@@ -6,11 +6,10 @@ Companion apps for macOS, iOS and tvOS apps let you backup and organize your Pho
 
 Photage can tag images with the country, state and place name using an images geolocation info via a local copy of the Geonames database for speed and security. It uses the latest edge AI models to classify and describe your images, all local to the device; no cloud upload or account needed.
 
-```
 Currently the only deployment is through Docker Hub. The source code is not OSS, but could be if there is enough interest. Access to the companion apps is only through Testflight.
 
 Contact me if you'd like to be included. 
-```
+
 
 ## Quick start
 ### 1. Update and Install Docker
