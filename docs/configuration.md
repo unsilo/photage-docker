@@ -331,6 +331,30 @@ for a bad upgrade — it gets you a shell against a database the app will not
 otherwise boot on. Leave it unset in normal use; migrations are idempotent and
 running them is a no-op after the first boot.
 
+### `PHOTAGE_TILE_UPSTREAM` and `PHOTAGE_TILE_URL`
+
+The map on `/places` gets its tiles through a caching proxy built into the app:
+the browser asks `/tiles/{z}/{x}/{y}.png`, and the app serves the tile from
+`tiles/` under the cache volume, fetching it from the upstream the first time.
+Nothing is downloaded ahead of time — the cache is exactly the areas and zooms
+someone has looked at — but those keep working with the Pi offline. Storage is
+small: a tile is a few kilobytes, and even a well-browsed cache is hundreds of
+megabytes, not gigabytes. Clear it by deleting the directory.
+
+```
+PHOTAGE_TILE_UPSTREAM=https://tile.openstreetmap.org/{z}/{x}/{y}.png   # default
+```
+
+The default upstream is OpenStreetMap's community tile servers. Their
+[usage policy](https://operations.osmfoundation.org/policies/tiles/) allows
+exactly this kind of on-demand caching for your own use and asks that nobody
+bulk-download; the app identifies itself in the User-Agent as the policy
+requires. Any other `{z}/{x}/{y}` raster server works here too.
+
+`PHOTAGE_TILE_URL` is what the *browser* loads. Leave it unset to use the
+cache. Set it to a full URL to bypass the app entirely — say, a tile server on
+your LAN — in which case the machine you browse from must reach that server.
+
 ### `PHOTAGE_GEONAMES_USERNAME`
 
 Turns a photo's GPS coordinates into country, state and place tags. **Off
