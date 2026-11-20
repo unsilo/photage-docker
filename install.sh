@@ -126,7 +126,7 @@ say "installing into ${PHOTAGE_DIR}"
 mkdir -p "${PHOTAGE_DIR}"
 cd "${PHOTAGE_DIR}"
 
-for f in docker-compose.yml docker-compose.hailo.yml nginx.conf .env.example; do
+for f in docker-compose.yml docker-compose.hailo.yml docker-compose.mdns.yml nginx.conf .env.example; do
   say "fetching ${f}"
   curl -fsSL "${RAW}/${f}" -o "${f}.tmp" || die "could not fetch ${RAW}/${f}"
   mv "${f}.tmp" "${f}"
@@ -158,7 +158,7 @@ if [[ -f .env ]]; then
   # the installer after moving a disk should fix the paths rather than leave a
   # container that starts and then cannot write.
   say "checking the directories .env points at"
-  for var in PHOTAGE_WAREHOUSE_PATH PHOTAGE_IMPORT_PATH PHOTAGE_MODELS_PATH; do
+  for var in PHOTAGE_WAREHOUSE_PATH PHOTAGE_IMPORT_PATH PHOTAGE_EXPORT_PATH PHOTAGE_MODELS_PATH; do
     val="$(grep -E "^${var}=" .env | head -1 | cut -d= -f2- || true)"
     [[ -z "$val" ]] && continue
     # A value with no slash is a named volume, not a path — leave it to Docker.
@@ -168,6 +168,7 @@ if [[ -f .env ]]; then
   done
   # The compose default when PHOTAGE_IMPORT_PATH is unset.
   grep -qE '^PHOTAGE_IMPORT_PATH=' .env || ensure_dir "${PHOTAGE_DIR}/import" "import"
+  grep -qE '^PHOTAGE_EXPORT_PATH=' .env || ensure_dir "${PHOTAGE_DIR}/export" "export"
 else
   say "generating .env"
 
@@ -190,6 +191,7 @@ else
   say "creating directories under ${data_root}"
   ensure_dir "${data_root}/warehouse" "warehouse"
   ensure_dir "${data_root}/import"    "import"
+  ensure_dir "${data_root}/export"    "export"
   ensure_dir "${data_root}/models"    "models"
 
   # The database goes alongside them if the filesystem can carry it, so that
@@ -218,7 +220,7 @@ else
       printf '\n'
       echo "What hostname will you use for Photage?"
       echo
-      echo "  A hostname or IP address, no http:// and no port. 
+      echo "  A hostname or IP address, no http:// and no port."
       echo
       read -r -p "hostname [${default_host}]: " ans < /dev/tty || true
       host="${ans:-$default_host}"
@@ -277,11 +279,13 @@ PHOTAGE_TAG=${PHOTAGE_TAG}
 PHOTAGE_WAREHOUSE_PATH=${data_root}/warehouse
 # Drop photos here to import them.
 PHOTAGE_IMPORT_PATH=${data_root}/import
+# Archives written by the Archive page. As large as the originals.
+PHOTAGE_EXPORT_PATH=${data_root}/export
 # Hailo .hef model files, and (see docs) the bumblebee HuggingFace cache.
 # Only used with docker-compose.hailo.yml, which requires it.
 PHOTAGE_MODELS_PATH=${data_root}/models
-# Postgres data location.
-PHOTAGE_DB_PATH=${db_path}}
+# Postgres data location. Absent means the Docker named volume.
+${db_path:+PHOTAGE_DB_PATH=${db_path}}
 ENV
   chmod 600 .env
   say "wrote .env (mode 600)"

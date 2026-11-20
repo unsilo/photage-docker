@@ -180,6 +180,19 @@ If you are writing `.env` by hand rather than using the installer, `mkdir
 import` first. Docker creates a missing bind-mount source as a root-owned
 directory, and the import screen then shows it empty.
 
+### `PHOTAGE_EXPORT_PATH`
+
+Where the Archive page writes exports, and where it looks for archives to
+restore. Defaults to `./export` next to the compose file.
+
+An archive holds a copy of every original, so it is as large as the library.
+Point this at a disk with room; an external drive is the usual choice. As with
+the import folder, `mkdir export` first if you are writing `.env` by hand, and
+the directory must be owned by uid 1000.
+
+See [Archives](upgrading.md#archives) for what an archive contains and how to
+restore one.
+
 ### `PHOTAGE_DB_PATH`
 
 Where Postgres keeps its data directory. Unset means the named volume
@@ -270,6 +283,21 @@ console.
 you fully trust, and behind a reverse proxy it is better to list the public
 origin.
 
+### Resolving `.local` names (mDNS)
+
+Containers cannot look up `device.local` names on their own, because mDNS is
+multicast and the bridge network does not carry it. Photage uses such names for
+picture frames, for one. To let the app resolve them, add the overlay to
+`COMPOSE_FILE` in `.env`:
+
+```
+COMPOSE_FILE=docker-compose.yml:docker-compose.mdns.yml
+```
+
+and recreate the container with `docker compose up -d`. The host must run
+`avahi-daemon`, and `/run/avahi-daemon/socket` must exist. Without the overlay
+everything works as before, but `.local` names do not resolve.
+
 ### `PHOTAGE_DIRECT_BIND`
 
 Where the app container itself is published, bypassing the proxy. Defaults to
@@ -331,15 +359,56 @@ for a bad upgrade — it gets you a shell against a database the app will not
 otherwise boot on. Leave it unset in normal use; migrations are idempotent and
 running them is a no-op after the first boot.
 
+### `PHOTAGE_RESTORE_FROM` and `PHOTAGE_RESTORE_RERUN_AI`
+
+`PHOTAGE_RESTORE_FROM` names an archive folder under `PHOTAGE_EXPORT_PATH` to
+restore when the app starts. It only acts on a library with no photos, so it can
+be left set: the second start does nothing.
+
+`PHOTAGE_RESTORE_RERUN_AI=true` discards the archive's classification tags and
+descriptions after the restore and queues the photos again. Each is only
+discarded if a classifier or captioner is enabled to redo it; otherwise the
+saved results are kept.
+
+The same restore, with a progress bar, is on the Archive page.
+
+### `PHOTAGE_MAP_STYLE` and `PHOTAGE_MAP_LANGUAGE`
+
+The map on `/places` is drawn in the browser from vector tiles, which is what
+lets its labels be in one language everywhere. Everything the map needs — the
+style, the tiles, the fonts and icons — comes through a caching proxy built
+into the app, kept in `tiles/vector/` under the cache volume and fetched from
+the upstream the first time. Nothing is downloaded ahead of time — the cache
+is exactly the areas and zooms someone has looked at — but those keep working
+with the Pi offline. Clear it by deleting the directory.
+
+```
+PHOTAGE_MAP_STYLE=https://tiles.openfreemap.org/styles/liberty   # default
+PHOTAGE_MAP_LANGUAGE=en                                          # default
+```
+
+The default style is [OpenFreeMap](https://openfreemap.org)'s Liberty: free,
+no key, built from OpenStreetMap. Its public service comes with no guarantee,
+so point `PHOTAGE_MAP_STYLE` at another MapLibre style, or at an OpenFreeMap
+you host, if the map matters to you. Styles built on the OpenMapTiles schema
+are the ones the language setting understands.
+
+`PHOTAGE_MAP_LANGUAGE` is a language code (`en`, `de`, `ja`, ...). A place
+with no name in that language is shown in Latin script if the map data has
+one, and otherwise as written locally. `local` shows every place's own name.
+
+Tiles are cached by position, not by the upstream's weekly build, so the map
+you have cached does not change until you delete `tiles/vector/t`.
+
+`PHOTAGE_MAP_STYLE=none` switches the map to raster tiles, below. A browser
+without WebGL gets them too.
+
 ### `PHOTAGE_TILE_UPSTREAM` and `PHOTAGE_TILE_URL`
 
-The map on `/places` gets its tiles through a caching proxy built into the app:
-the browser asks `/tiles/{z}/{x}/{y}.png`, and the app serves the tile from
-`tiles/` under the cache volume, fetching it from the upstream the first time.
-Nothing is downloaded ahead of time — the cache is exactly the areas and zooms
-someone has looked at — but those keep working with the Pi offline. Storage is
-small: a tile is a few kilobytes, and even a well-browsed cache is hundreds of
-megabytes, not gigabytes. Clear it by deleting the directory.
+The raster map gets its tiles through the same kind of cache: the browser asks
+`/tiles/{z}/{x}/{y}.png`, and the app serves the tile from `tiles/` under the
+cache volume, fetching it from the upstream the first time. Raster tiles are
+pictures, so their labels are in whatever language the tile server drew.
 
 ```
 PHOTAGE_TILE_UPSTREAM=https://tile.openstreetmap.org/{z}/{x}/{y}.png   # default
@@ -354,6 +423,9 @@ requires. Any other `{z}/{x}/{y}` raster server works here too.
 `PHOTAGE_TILE_URL` is what the *browser* loads. Leave it unset to use the
 cache. Set it to a full URL to bypass the app entirely — say, a tile server on
 your LAN — in which case the machine you browse from must reach that server.
+
+Setting either of these without `PHOTAGE_MAP_STYLE` switches the map to
+raster, so an install that already chose its own tile server keeps it.
 
 ### `PHOTAGE_GEONAMES_USERNAME`
 
@@ -541,6 +613,7 @@ The installer asks where your data should go and creates it. Default layout:
 ~/photage-data/
   warehouse/              originals and thumbnails — THE thing to back up
   import/                 drop photos here to import them
+  export/                 archives written by the Archive page
   models/                 AI model files (and the classifier download cache)
   db/                     the database, out of reach of `down -v`
 ```
@@ -560,7 +633,7 @@ owned by **uid 1000** — the container runs as that user and cannot write a
 directory it does not own:
 
 ```bash
-sudo mkdir -p /mnt/photos/{warehouse,import,models}
+sudo mkdir -p /mnt/photos/{warehouse,import,export,models}
 sudo chown -R 1000:1000 /mnt/photos
 ```
 

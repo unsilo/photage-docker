@@ -20,8 +20,32 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-photage_prod}
     volumes:
       - ${PHOTAGE_DB_PATH:-photage-db}:/var/lib/postgresql
+    # Postgres ships tuned for a spinning disk and a few hundred MB of RAM.
+    # This is a Pi 5 with an SSD: index seeks are cheap (random_page_cost), the
+    # buffer cache can hold the whole library's indexes, and JIT compiling
+    # short queries on four ARM cores costs more than it saves. Statements
+    # over 200 ms land in `docker compose logs db`.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - effective_cache_size=2GB
+      - -c
+      - work_mem=32MB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      - -c
+      - jit=off
+      - -c
+      - log_min_duration_statement=200
     # The 64MB default gets tight once the gallery starts running the sorts and
-    # hash joins behind tag and album queries.
+    # hash joins behind tag and album queries (parallel workers share them
+    # through /dev/shm; shared_buffers itself is anonymous mmap and not counted).
     shm_size: 256mb
     healthcheck:
       test:
@@ -85,17 +109,32 @@ services:
       # Only for the commercial endpoint (https://secure.geonames.net). Leave
       # blank for the free service.
       PHOTAGE_GEONAMES_BASE_URL: ${PHOTAGE_GEONAMES_BASE_URL:-}
-      # Map tiles for /places. The app proxies and caches them on disk (under
-      # the cache volume, tiles/), so anywhere you have looked at keeps working
-      # offline. UPSTREAM is where the cache fills from; a {z}/{x}/{y} template.
-      PHOTAGE_TILE_UPSTREAM: ${PHOTAGE_TILE_UPSTREAM:-https://tile.openstreetmap.org/{z}/{x}/{y}.png}
-      # Leave unset to use the built-in cache. Set it to make the browser load
-      # tiles straight from a server of your own instead.
+      # The map: vector tiles drawn in the browser, fetched through a cache
+      # built into the app (under the cache volume, tiles/), so anywhere you
+      # have looked at keeps working offline. STYLE is a MapLibre style URL, or
+      # "none" for the raster tiles below. LANGUAGE is the label language: a
+      # code such as en or de, or "local" for each place's own name.
+      PHOTAGE_MAP_STYLE: ${PHOTAGE_MAP_STYLE:-}
+      PHOTAGE_MAP_LANGUAGE: ${PHOTAGE_MAP_LANGUAGE:-en}
+      # Raster tiles, used with PHOTAGE_MAP_STYLE=none or in a browser without
+      # WebGL. UPSTREAM is where that cache fills from, a {z}/{x}/{y} template
+      # (OpenStreetMap when unset). Setting either of these without a STYLE
+      # switches the map to raster.
+      PHOTAGE_TILE_UPSTREAM: ${PHOTAGE_TILE_UPSTREAM:-}
+      # Set it to make the browser load raster tiles straight from a server of
+      # your own instead of the built-in cache.
       PHOTAGE_TILE_URL: ${PHOTAGE_TILE_URL:-}
 
       # Escape hatch for a bad migration: start the app without running
       # Photage.Release.setup() so you can get a shell.
       PHOTAGE_SKIP_MIGRATIONS: ${PHOTAGE_SKIP_MIGRATIONS:-false}
+
+      # Archives: the Archive page writes exports here and lists them for
+      # restore. PHOTAGE_RESTORE_FROM names one to restore at start-up, and
+      # only does so into a library with no photos. See docs/upgrading.md.
+      PHOTAGE_EXPORTS: /export
+      PHOTAGE_RESTORE_FROM: ${PHOTAGE_RESTORE_FROM:-}
+      PHOTAGE_RESTORE_RERUN_AI: ${PHOTAGE_RESTORE_RERUN_AI:-false}
 
       # A Pi 5 has 4 cores, and Postgres is competing for the same ones. 10 (the
       # app default) mostly buys context switching.
@@ -120,6 +159,10 @@ services:
       # writing .env by hand, `mkdir import` first — Docker will otherwise
       # create it owned by root and the import screen will show it empty.
       - ${PHOTAGE_IMPORT_PATH:-./import}:/import
+
+      # Exported archives. Like the import folder: created by install.sh, and
+      # `mkdir export` first if you are writing .env by hand.
+      - ${PHOTAGE_EXPORT_PATH:-./export}:/export
     logging: *logging
 
   proxy:

@@ -95,6 +95,72 @@ A cron entry, if you want one:
 
 ---
 
+## Archives
+
+The backups above copy photage's own storage, which only the same version of
+photage and Postgres can read. An **archive** is the portable alternative: a
+plain folder you can read without photage, and that any later version can
+restore.
+
+Make one from **Tools → Export** in the right-hand sidebar, which opens the
+Archive page. It is written under
+`PHOTAGE_EXPORT_PATH`:
+
+```
+photage-2026-11-14/
+  manifest.json
+  photos/2024/07/IMG_1234.jpg        the original file
+  photos/2024/07/IMG_1234.jpg.json   everything photage knows about it
+  photos/undated/…
+  library/                           the tag tree, places, imports, settings
+```
+
+What comes back on restore: every photo with its date, location and place,
+rating, description, classification data and tags; albums with their cover
+photos; regions; import history; classifier thresholds and caption prompts.
+Thumbnails are made again. Nothing is sent back through the AI unless you ask.
+
+What does not: accounts (restored photos belong to the first admin, and other
+users register again), and which classifiers are switched on.
+
+Every file is checked against its recorded checksum on the way in, and photos
+already in the library are skipped, so restoring twice is harmless.
+
+An archive is as large as your originals. It is a second copy of the library,
+not a replacement for backing up `.env`.
+
+### Wipe and restore
+
+For a major upgrade, a move to new hardware, or a database you would rather
+not carry forward:
+
+1. Export from the Archive page and wait for it to finish. Check the report
+   shows no failures.
+2. Stop and remove the old data:
+
+   ```bash
+   cd ~/photage
+   docker compose down
+   sudo rm -rf ~/photage-data/db ~/photage-data/warehouse
+   mkdir -p ~/photage-data/db
+   sudo mkdir -p ~/photage-data/warehouse && sudo chown 1000:1000 ~/photage-data/warehouse
+   ```
+
+   Leave `~/photage-data/export` alone. Adjust the paths if yours differ.
+3. Name the archive in `.env`:
+
+   ```
+   PHOTAGE_RESTORE_FROM=photage-2026-11-14
+   ```
+4. `docker compose up -d`. The restore starts once the app is up;
+   `docker compose logs -f photage` shows it, and the Archive page shows
+   progress.
+
+The setting can stay in `.env`: it does nothing once the library has photos.
+Or skip step 3, start the app, and restore from the Archive page instead.
+
+---
+
 ## Restoring
 
 ### Database

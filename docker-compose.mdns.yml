@@ -1,0 +1,18 @@
+# mDNS overlay: lets the app resolve `something.local` names.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.mdns.yml up -d
+#
+# The image carries nss-mdns, which asks the host's Avahi daemon. Containers on
+# the bridge network cannot send multicast, so the answer has to come through
+# the daemon's socket. Needs avahi-daemon running on the host (Raspberry Pi OS
+# has it); `ls /run/avahi-daemon/socket` should show a socket.
+
+services:
+  photage:
+    volumes:
+      - type: bind
+        source: /run/avahi-daemon/socket
+        target: /run/avahi-daemon/socket
+        read_only: true
+        bind:
+          create_host_path: false
